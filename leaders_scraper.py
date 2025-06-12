@@ -17,16 +17,20 @@ def clean_first_paragraph(paragraph: str):
             "replacement": ""        
         },
         { 
-            "pattern": r"\(.*?ⓘ; ",
+            "pattern": r"\(.*?ⓘ;",
             "replacement": "("
-        },
-        {
-            "pattern": r"\(/.*?; ",
-            "replacement": "("            
         },
         { 
             "pattern": r" \[.*?ⓘ",
             "replacement": ""
+        },
+        { 
+            "pattern": r" .*?ⓘ ",
+            "replacement": " "
+        },
+        {
+            "pattern": r"\(\/.*?;",
+            "replacement": "("            
         },
         { 
             "pattern": r"\[\w\]",
@@ -38,6 +42,9 @@ def clean_first_paragraph(paragraph: str):
 
     for pattern_replacement in patterns_replacements:
         cleaned_paragraph = re.sub(pattern_replacement["pattern"], pattern_replacement["replacement"], cleaned_paragraph)
+
+    return cleaned_paragraph
+
 
 def get_first_paragraph(session, wikipedia_url: str):
     wiki_response = session.get(wikipedia_url)
@@ -82,6 +89,7 @@ def get_first_paragraph(session, wikipedia_url: str):
             
     return ""
 
+
 def api_get_cookies(session, api_root_url: str, cookie_endpoint: str):
     # Get cookie from the API
     cookie_response = session.get(f"{api_root_url}/{cookie_endpoint}")
@@ -92,6 +100,7 @@ def api_get_cookies(session, api_root_url: str, cookie_endpoint: str):
         return None
     
     return cookie_response.cookies
+
 
 def get_leaders(session):
     api_root_url = "https://country-leaders.onrender.com"
@@ -155,6 +164,7 @@ def get_leaders(session):
     
     return leaders_per_country
 
+
 def save(leaders_dictionary, filepath):
     # Serializing json
     json_object = json.dumps(leaders_dictionary, indent=4)
@@ -162,6 +172,7 @@ def save(leaders_dictionary, filepath):
     # Writing to file
     with open(filepath, "w") as outfile:
         outfile.write(json_object)
+
 
 if __name__ == '__main__':
     session = requests.Session()
