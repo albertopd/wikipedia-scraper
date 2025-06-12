@@ -17,16 +17,20 @@ def clean_first_paragraph(paragraph: str):
             "replacement": ""        
         },
         { 
-            "pattern": r"\(.*?ⓘ; ",
+            "pattern": r"\(.*?ⓘ;",
             "replacement": "("
-        },
-        {
-            "pattern": r"\(/.*?; ",
-            "replacement": "("            
         },
         { 
             "pattern": r" \[.*?ⓘ",
             "replacement": ""
+        },
+        { 
+            "pattern": r" .*?ⓘ ",
+            "replacement": " "
+        },
+        {
+            "pattern": r"\(\/.*?;",
+            "replacement": "("            
         },
         { 
             "pattern": r"\[\w\]",
