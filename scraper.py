@@ -22,14 +22,30 @@ class CookieExpiredError(Exception):
         super().__init__(f"Cookie expired (STATUS CODE: {status_code})")
 
 def api_call_with_cookie_retry(api_call):
+    """
+    Decorator that retries an API call when a cookie expired error occurs.
+
+    This decorator wraps an API call function and attempts to handle `CookieExpiredError`
+    by fetching a new cookie and retrying the call.
+
+    Parameters:
+        api_call (callable): The API function to decorate. It must accept a self reference,
+                             followed by any additional arguments.
+
+    Returns:
+        callable: A wrapped function that retries the API call with a refreshed cookie if needed.
+    """
     def wrapper(self, *args, **kwargs):
+
         for _ in range(2):
             try:
                 return api_call(self, *args, **kwargs)
             except CookieExpiredError:
                 print("Cookie expired, getting another one from the jar")
                 self.refresh_cookie()
+
         return api_call(self, *args, **kwargs)
+
     return wrapper
 
 class WikipediaScraper:
