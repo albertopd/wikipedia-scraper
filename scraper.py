@@ -1,5 +1,6 @@
 import json
 import re
+import csv
 from urllib.parse import urljoin
 
 import requests
@@ -213,3 +214,31 @@ class WikipediaScraper:
         # Writing serialized string to file
         with open(filepath, "w") as outfile:
             outfile.write(json_object)
+
+        print(f"Leaders data saved to {filepath}")
+
+    def to_csv_file(self, filepath: str) -> None:
+        """
+        Save the leader data dictionary to a CSV file.
+
+        Args:
+            filepath (str): Path where the CSV file will be saved.
+        """
+        # Flatten the data and add the country info
+        rows = []
+        for country, leaders in self.leaders_data.items():
+            for leader in leaders:
+                row = leader.copy()
+                row['Country'] = country
+                rows.append(row)
+
+        # Get all the fieldnames (keys)
+        fieldnames = ['Country'] + [key for key in rows[0] if key != 'Country']
+
+        # Write to CSV
+        with open('leaders.csv', mode='w', newline='', encoding='utf-8') as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
+
+        print(f"Leaders data saved to {filepath}")
