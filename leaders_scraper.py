@@ -208,7 +208,7 @@ def get_first_paragraph_from_wikipedia(
         paragraphs = main_content.find_all("p")
     else:
         # As fallback, we get all the pragraphs from the page
-        paragraphs = main_content.find_all("p")
+        paragraphs = soup.find_all("p")
    
     print(f"Number of paragraphs found: {len(paragraphs)}")
 
