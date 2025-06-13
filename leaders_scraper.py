@@ -1,41 +1,171 @@
-import re
-import requests
 import json
+import re
+from urllib.parse import urljoin
+
+import requests
+import requests.cookies
 from bs4 import BeautifulSoup
+from requests import Session
+
+
+# API base URL and endpoints
+API_BASE_URL = "https://country-leaders.onrender.com"
+COOKIE_ENDPOINT = "/cookie"
+COUNTRIES_ENDPOINT = "/countries"
+LEADERS_ENDPOINT = "/leaders"
+
+# API status codes
+STATUS_CODE_EXPIRED_COOKIE = 403
+
+# API settings
+API_NUM_RETRIES = 2
+
+# Custom exceptions
+class CookieExpiredError(Exception):
+    """
+    Exception raised when an API error occurs.
+    
+    Attributes:
+        message (str): Description of the error.
+        status_code (int, optional): HTTP status code returned by the API.
+    """
+    def __init__(self, status_code: int):
+        self.status_code = status_code 
+        super().__init__(f"Cookie expired (STATUS CODE: {status_code})")
+
+# API calls
+def api_get_cookie(session: Session) -> requests.cookies.RequestsCookieJar:
+    """
+    Request a session cookie from the API.
+
+    Args:
+        session (Session): The active requests session.
+
+    Returns:
+        RequestsCookieJar: The cookie jar from the API response.
+
+    Raises:
+        APIError: If the response status code is not 200.
+    """
+    cookie_response = session.get(urljoin(API_BASE_URL, COOKIE_ENDPOINT))
+    cookie_response.raise_for_status()
+    return cookie_response.cookies
+
+def api_call_with_cookie_retry(api_call):
+    """
+    Decorator that retries an API call when a cookie expired error occurs.
+
+    This decorator wraps an API call function and attempts to handle `CookieExpiredError`
+    by fetching a new cookie and retrying the call. It retries up to `API_NUM_RETRIES` times.
+
+    Parameters:
+        api_call (callable): The API function to decorate. It must accept a `session` and `cookie`
+                             as its first two arguments, followed by any additional arguments.
+
+    Returns:
+        callable: A wrapped function that retries the API call with a refreshed cookie if needed.
+
+    Raises:
+        The last encountered exception if all retry attempts fail.
+    """
+    def wrapper(session: Session, cookie, *args, **kwargs):
+        
+        for _ in range(API_NUM_RETRIES):
+            try:
+                call_response = api_call(session, cookie, *args, **kwargs)
+            except CookieExpiredError as cee:
+                print("Cookie expired, getting another one from the jar")
+                cookie = api_get_cookie(session)
+            
+        return call_response
+
+    return wrapper
+
+@api_call_with_cookie_retry
+def api_get_countries(
+        session: Session,
+        cookie: requests.cookies.RequestsCookieJar
+    ) -> list[str]:
+    """
+    Retrieve a list of countries from the API, retrying on cookie expiration.
+
+    Args:
+        session (Session): The active requests session.
+        cookie: The session cookie.
+
+    Returns:
+        list[str]: List of country codes.
+
+    Raises:
+        APIError: If the request fails with an unhandled status code.
+    """
+    countries_response = session.get(
+        urljoin(API_BASE_URL, COUNTRIES_ENDPOINT),
+        cookies = cookie
+    )
+
+    if countries_response.status_code == STATUS_CODE_EXPIRED_COOKIE:
+        raise CookieExpiredError(countries_response.status_code)
+
+    countries_response.raise_for_status()
+
+    return countries_response.json()
+
+@api_call_with_cookie_retry
+def api_get_leaders(
+        session: Session,
+        cookie: requests.cookies.RequestsCookieJar,
+        country_code: str
+    ) -> list[dict]:
+    """
+    Get leaders for a specified country from the API, retrying on cookie expiration.
+
+    Args:
+        session (Session): The active requests session.
+        cookie: The session cookie.
+        country_code (str): The ISO country code.
+
+    Returns:
+        list[dict]: A list of leader records as dictionaries.
+
+    Raises:
+        APIError: If the request fails with an unhandled status code.
+    """
+    leaders_response = session.get(
+        urljoin(API_BASE_URL, LEADERS_ENDPOINT), 
+        cookies = cookie,
+        params = {"country": country_code}
+    )
+
+    if leaders_response.status_code == STATUS_CODE_EXPIRED_COOKIE:
+        raise CookieExpiredError(leaders_response.status_code)
+    
+    leaders_response.raise_for_status()
+
+    return leaders_response.json()
+
 
 def clean_first_paragraph(paragraph: str):
+    """
+    Clean and remove unnecessary annotations and references from a paragraph string.
+
+    Args:
+        paragraph (str): The raw paragraph text.
+
+    Returns:
+        str: Cleaned paragraph text.
+    """
     if not str:
         return None
     
     patterns_replacements = [
-        {
-            "pattern": r"\/.*?ⓘ; ",
-            "replacement": ""
-        },
-        {
-            "pattern": r" \(.*?ⓘ\)",
-            "replacement": ""        
-        },
-        { 
-            "pattern": r"\(.*?ⓘ;",
-            "replacement": "("
-        },
-        { 
-            "pattern": r" \[.*?ⓘ",
-            "replacement": ""
-        },
-        { 
-            "pattern": r" .*?ⓘ ",
-            "replacement": " "
-        },
-        {
-            "pattern": r"\(\/.*?;",
-            "replacement": "("            
-        },
-        { 
-            "pattern": r"\[\w\]",
-            "replacement": ""
-        }
+        {"pattern": r"\/.*?ⓘ; ", "replacement": ""},
+        {"pattern": r" \(.*?ⓘ\)", "replacement": ""},
+        {"pattern": r"\(.*?ⓘ;", "replacement": "("},
+        {"pattern": r" \[.*?ⓘ", "replacement": ""},
+        {"pattern": r" .*?ⓘ ", "replacement": " "},
+        {"pattern": r"\(\/.*?;", "replacement": "("},
+        {"pattern": r"\[\w\]", "replacement": ""}
     ]
 
     cleaned_paragraph = paragraph
@@ -45,15 +175,24 @@ def clean_first_paragraph(paragraph: str):
 
     return cleaned_paragraph
 
+def get_first_paragraph_from_wikipedia(
+        session: Session, 
+        wikipedia_url: str
+    ):
+    """
+    Extract the first relevant paragraph from a Wikipedia page.
 
-def get_first_paragraph(session, wikipedia_url: str):
+    Args:
+        session (Session): The requests session.
+        wikipedia_url (str): URL of the Wikipedia page.
+
+    Returns:
+        str: The cleaned first paragraph of the main content.
+    """
     wiki_response = session.get(wikipedia_url)
+    
+    wiki_response.raise_for_status()
 
-    if wiki_response.status_code != 200:
-        print(f"Error {wiki_response.status_code} while scrapping URL => {wikipedia_url}")
-        print(wiki_response.content)
-        return ""
-   
     wiki_html = wiki_response.content
 
     soup = BeautifulSoup(wiki_html, 'html.parser')
@@ -89,93 +228,73 @@ def get_first_paragraph(session, wikipedia_url: str):
             
     return ""
 
+def get_leaders(session: Session):
+    """
+    Function to retrieve and enrich leaders data for all countries.
 
-def api_get_cookies(session, api_root_url: str, cookie_endpoint: str):
-    # Get cookie from the API
-    cookie_response = session.get(f"{api_root_url}/{cookie_endpoint}")
+    Args:
+        session (Session): The requests session.
 
-    if cookie_response.status_code != 200:
-        print(f"Error {cookie_response.status_code} while callling API => {api_root_url}/{cookie_endpoint}")
-        print(cookie_response.content)
-        return None
-    
-    return cookie_response.cookies
-
-
-def get_leaders(session):
-    api_root_url = "https://country-leaders.onrender.com"
-    cookie_endpoint = "cookie"
-    countries_endpoint = "countries"
-    leaders_endpoint = "leaders"
-
-    cookies = api_get_cookies(session, api_root_url, cookie_endpoint)
-    if not cookies:
-        return
+    Returns:
+        dict[str, list[dict]]: Mapping of country codes to lists of enriched leader data.
+    """
+    cookie = api_get_cookie(session)
 
     # Get list of countries from the API
-    countries_response = session.get(
-        f"{api_root_url}/{countries_endpoint}",
-        cookies = cookies
-    )
+    countries = api_get_countries(session, cookie)
 
-    if countries_response.status_code != 200:
-        print(f"Error {countries_response.status_code} while callling API => {api_root_url}/{countries_endpoint}")
-        print(countries_response.content)
-        return None
-
-    countries = countries_response.json()
     print(f"Countries: {countries}")
 
-    leaders_per_country = {}
+    leaders = {}
     
-    # Get list of leaders per country from the API
     for country in countries:
         print(f"Processing country: {country}")
 
-        leaders_response = session.get(
-            f"{api_root_url}/{leaders_endpoint}",
-            cookies = cookies,
-            params = {"country": country}
-        )
+        # Get list of country leaders from the API
+        leaders[country] = api_get_leaders(session, cookie, country)
 
-        # If cookie is expired, lets get a new one and call the leaders endpoint again
-        if leaders_response.status_code == 403:
-            print("Expired cookie, getting new one")
-            
-            cookies = api_get_cookies(session, api_root_url, cookie_endpoint)
+        print(f"{len(leaders[country])} leaders found for country {country}")
 
-            leaders_response = session.get(
-                f"{api_root_url}/{leaders_endpoint}",
-                cookies = cookies,
-                params = {"country": country}
-            )
+        # For each leader, get the extra info from Wikipedia
+        for leader in leaders[country]:
+            leader_wiki_url = leader["wikipedia_url"]
 
-        if leaders_response.status_code == 200:
-            leaders_per_country[country] = leaders_response.json()
+            print(f"Leader Wikipage: {leader_wiki_url}")
 
-            print(f"{len(leaders_per_country[country])} leaders found for country {country}")
-            # For each leader, get the extra info from Wikipedia
-            for leader in leaders_per_country[country]:
-                print(leader["wikipedia_url"])
-                leader["wikipedia_intro"] = get_first_paragraph(session, leader["wikipedia_url"])
-        else:
-            print(f"Error {leaders_response.status_code} while callling API => {api_root_url}/{leaders_endpoint}")
-            print(leaders_response.content)
+            leader["wikipedia_intro"] = get_first_paragraph_from_wikipedia(session, leader_wiki_url)
     
-    return leaders_per_country
+    return leaders
 
+def save(
+        leaders_dictionary: dict[str, list[dict]],
+        filepath: str
+    ):
+    """
+    Save the leader data dictionary to a JSON file.
 
-def save(leaders_dictionary, filepath):
-    # Serializing json
-    json_object = json.dumps(leaders_dictionary, indent=4)
+    Args:
+        leaders_dictionary (dict[str, list[dict]]): Dictionary of country -> leaders list.
+        filepath (str): Path where the JSON file will be saved.
+    """
+    # Serializing object to JSON string
+    json_object = json.dumps(leaders_dictionary, indent = 4)
 
-    # Writing to file
+    # Writing serialized string to file
     with open(filepath, "w") as outfile:
         outfile.write(json_object)
 
 
-if __name__ == '__main__':
+def main():
+    # Create a Session to be shared by all the request calls
     session = requests.Session()
 
+    # Get list of leader per country from the API + the extra info from Wikipedia
     leaders = get_leaders(session)
+
+    # Store the list of leaders in a JSON file
     save(leaders, "leaders.json")
+
+
+# Only runs when this file is executed directly
+if __name__ == '__main__':
+    main()
