@@ -36,7 +36,7 @@ It combines data from a public REST API with Wikipedia scraping to enrich the in
 
 Run the scraper from the terminal:
 ```bash
-python leaders_scraper.py
+python main.py
 ```
 
 The output file `leaders.json` will be created in the current directory.
