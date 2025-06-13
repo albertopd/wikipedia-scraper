@@ -17,8 +17,6 @@ LEADERS_ENDPOINT = "/leaders"
 # API status codes
 STATUS_CODE_EXPIRED_COOKIE = 403
 
-# API settings
-API_NUM_RETRIES = 2
 
 # Custom exceptions
 class CookieExpiredError(Exception):
@@ -56,7 +54,7 @@ def api_call_with_cookie_retry(api_call):
     Decorator that retries an API call when a cookie expired error occurs.
 
     This decorator wraps an API call function and attempts to handle `CookieExpiredError`
-    by fetching a new cookie and retrying the call. It retries up to `API_NUM_RETRIES` times.
+    by fetching a new cookie and retrying the call.
 
     Parameters:
         api_call (callable): The API function to decorate. It must accept a `session` and `cookie`
@@ -70,7 +68,7 @@ def api_call_with_cookie_retry(api_call):
     """
     def wrapper(session: Session, cookie, *args, **kwargs):
         
-        for _ in range(API_NUM_RETRIES):
+        for _ in range(2):
             try:
                 call_response = api_call(session, cookie, *args, **kwargs)
             except CookieExpiredError as cee:
