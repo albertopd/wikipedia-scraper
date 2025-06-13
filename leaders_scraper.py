@@ -155,25 +155,27 @@ def clean_first_paragraph(paragraph: str):
     Returns:
         str: Cleaned paragraph text.
     """
-    if not str:
-        return None
+    if not paragraph:
+        return ""
     
     patterns_replacements = [
-        {"pattern": r"\/.*?ⓘ; ", "replacement": ""},
-        {"pattern": r" \(.*?ⓘ\)", "replacement": ""},
-        {"pattern": r"\(.*?ⓘ;", "replacement": "("},
-        {"pattern": r" \[.*?ⓘ", "replacement": ""},
-        {"pattern": r" .*?ⓘ ", "replacement": " "},
-        {"pattern": r"\(\/.*?;", "replacement": "("},
-        {"pattern": r"\[\w\]", "replacement": ""}
+        # Remove things like "/xyzⓘ; ", "(xyzⓘ)", "[xyzⓘ", "xyzⓘ "
+        { "pattern": r"(\/.*?ⓘ; ?|\(.*?ⓘ\)|\[.*?ⓘ|.*?ⓘ )", "replacement": "" },
+
+        # Remove other cases where there is extra information inside the parenthesis that we want to preserve
+        { "pattern": r"\(\/.*?;", "replacement": "(" },
+        { "pattern": r"\(.*?ⓘ;", "replacement": "(" },
+
+        # Remove simple reference markers like [1], [a], etc.
+        { "pattern": r"\[\w\]", "replacement": "" }
     ]
 
     cleaned_paragraph = paragraph
 
-    for pattern_replacement in patterns_replacements:
-        cleaned_paragraph = re.sub(pattern_replacement["pattern"], pattern_replacement["replacement"], cleaned_paragraph)
+    for pr in patterns_replacements:
+        cleaned_paragraph = re.sub(pr["pattern"], pr["replacement"], cleaned_paragraph)
 
-    return cleaned_paragraph
+    return cleaned_paragraph.strip()
 
 def get_first_paragraph_from_wikipedia(
         session: Session, 
@@ -190,41 +192,36 @@ def get_first_paragraph_from_wikipedia(
         str: The cleaned first paragraph of the main content.
     """
     wiki_response = session.get(wikipedia_url)
-    
     wiki_response.raise_for_status()
 
-    wiki_html = wiki_response.content
+    soup = BeautifulSoup(wiki_response.content, 'html.parser')
 
-    soup = BeautifulSoup(wiki_html, 'html.parser')
-
-    # We will only look for the first paragraph in the main content of the page 
+    # Try to find main content using known class names
+    # First we search by classs "mw-content-ltr"
     main_content = soup.find("div", class_ = "mw-content-ltr")
 
-    # Some pages use different class for the main content, let's try that
+    # If not found, then we search by class "mw-content-rtl"
     if not main_content:
-        print("Didn't find mw-content-ltr, trying mw-content-rtl")
+        print("Didn't find main content by class [mw-content-ltr], searching by class [mw-content-rtl]")
         main_content = soup.find("div", class_ = "mw-content-rtl")
 
     if main_content:
         # Get all the pragraphs from the main content section
         paragraphs = main_content.find_all("p")
-    
-    if not paragraphs:
-       # As a backup, we get all the pragraphs from the page
-       print("Last resource, getting all the paragraphs from the page")
-       paragraphs = soup.find_all("p")
+    else:
+        # As fallback, we get all the pragraphs from the page
+        paragraphs = main_content.find_all("p")
    
-    if paragraphs:
-        print(f"Number of paragraphs: {len(paragraphs)}")
+    print(f"Number of paragraphs found: {len(paragraphs)}")
 
-        for paragraph in paragraphs:
-            # Look for a <b> tag in the paragraph
-            bold_tag = paragraph.find("b")
+    for paragraph in paragraphs:
+        # Look for a <b> tag in the paragraph
+        bold_tag = paragraph.find("b")
 
-            # If we find the <b> tag and is not empty, then we assume that we are in the first paragraph of the main content
-            if bold_tag and bold_tag.get_text().rstrip() != "":
-                # Clean the content of the paragraph before returning it
-                return clean_first_paragraph(paragraph.get_text().rstrip())
+        # If we find the <b> tag and is not empty, then we assume that we are in the first paragraph of the main content
+        if bold_tag and bold_tag.get_text().rstrip() != "":
+            # Clean the content of the paragraph before returning it
+            return clean_first_paragraph(paragraph.get_text().rstrip())
             
     return ""
 
