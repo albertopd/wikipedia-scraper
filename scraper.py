@@ -44,8 +44,6 @@ def api_call_with_cookie_retry(api_call):
                 print("Cookie expired, getting another one from the jar")
                 self.refresh_cookie()
 
-        return api_call(self, *args, **kwargs)
-
     return wrapper
 
 class WikipediaScraper:
