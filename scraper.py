@@ -1,5 +1,6 @@
 import json
 import re
+import csv
 from urllib.parse import urljoin
 
 import requests
@@ -21,14 +22,30 @@ class CookieExpiredError(Exception):
         super().__init__(f"Cookie expired (STATUS CODE: {status_code})")
 
 def api_call_with_cookie_retry(api_call):
+    """
+    Decorator that retries an API call when a cookie expired error occurs.
+
+    This decorator wraps an API call function and attempts to handle `CookieExpiredError`
+    by fetching a new cookie and retrying the call.
+
+    Parameters:
+        api_call (callable): The API function to decorate. It must accept a self reference,
+                             followed by any additional arguments.
+
+    Returns:
+        callable: A wrapped function that retries the API call with a refreshed cookie if needed.
+    """
     def wrapper(self, *args, **kwargs):
+
         for _ in range(2):
             try:
                 return api_call(self, *args, **kwargs)
             except CookieExpiredError:
                 print("Cookie expired, getting another one from the jar")
                 self.refresh_cookie()
+
         return api_call(self, *args, **kwargs)
+
     return wrapper
 
 class WikipediaScraper:
@@ -213,3 +230,31 @@ class WikipediaScraper:
         # Writing serialized string to file
         with open(filepath, "w") as outfile:
             outfile.write(json_object)
+
+        print(f"Leaders data saved to {filepath}")
+
+    def to_csv_file(self, filepath: str) -> None:
+        """
+        Save the leader data dictionary to a CSV file.
+
+        Args:
+            filepath (str): Path where the CSV file will be saved.
+        """
+        # Flatten the data and add the country info
+        rows = []
+        for country, leaders in self.leaders_data.items():
+            for leader in leaders:
+                row = leader.copy()
+                row['Country'] = country
+                rows.append(row)
+
+        # Get all the fieldnames (keys)
+        fieldnames = ['Country'] + [key for key in rows[0] if key != 'Country']
+
+        # Write to CSV
+        with open('leaders.csv', mode='w', newline='', encoding='utf-8') as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
+
+        print(f"Leaders data saved to {filepath}")
