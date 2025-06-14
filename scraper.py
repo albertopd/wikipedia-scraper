@@ -4,22 +4,8 @@ import csv
 from urllib.parse import urljoin
 
 import requests
-import requests.cookies
 from bs4 import BeautifulSoup
-from requests import Session
 
-
-class CookieExpiredError(Exception):
-    """
-    Exception raised when an API error occurs.
-    
-    Attributes:
-        message (str): Description of the error.
-        status_code (int, optional): HTTP status code returned by the API.
-    """
-    def __init__(self, status_code: int):
-        self.status_code = status_code 
-        super().__init__(f"Cookie expired (STATUS CODE: {status_code})")
 
 def api_call_with_cookie_retry(api_call):
     """
@@ -40,9 +26,13 @@ def api_call_with_cookie_retry(api_call):
         for _ in range(2):
             try:
                 return api_call(self, *args, **kwargs)
-            except CookieExpiredError:
-                print("Cookie expired, getting another one from the jar")
-                self.refresh_cookie()
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 403:
+                    print("Cookie expired, getting another one from the jar")
+                    self.refresh_cookie()
+                else:
+                    # For other error codes, we re-raise the exception so it bubbles up
+                    raise
 
     return wrapper
 
@@ -52,9 +42,6 @@ class WikipediaScraper:
     COOKIE_ENDPOINT = "/cookie"
     COUNTRIES_ENDPOINT = "/countries"
     LEADERS_ENDPOINT = "/leaders"
-
-    # API status codes
-    STATUS_CODE_EXPIRED_COOKIE = 403
 
     def __init__(self) -> None:
         self.session = requests.Session()
@@ -104,10 +91,6 @@ class WikipediaScraper:
             urljoin(self.API_BASE_URL, self.COUNTRIES_ENDPOINT),
             cookies = self.cookie
         )
-
-        if countries_response.status_code == self.STATUS_CODE_EXPIRED_COOKIE:
-            raise CookieExpiredError(countries_response.status_code)
-
         countries_response.raise_for_status()
 
         return countries_response.json()
@@ -128,10 +111,6 @@ class WikipediaScraper:
             cookies = self.cookie,
             params = {"country": country_code}
         )
-
-        if leaders_response.status_code == self.STATUS_CODE_EXPIRED_COOKIE:
-            raise CookieExpiredError(leaders_response.status_code)
-        
         leaders_response.raise_for_status()
 
         return leaders_response.json()
