@@ -11,8 +11,8 @@ def api_call_with_cookie_retry(api_call):
     """
     Decorator that retries an API call when a cookie expired error occurs.
 
-    This decorator wraps an API call function and attempts to handle `CookieExpiredError`
-    by fetching a new cookie and retrying the call.
+    This decorator wraps an API call function and attempts to handle `requests.exceptions.HTTPError` 
+    (with error code 403 -> cookie expired), by fetching a new cookie and retrying the call.
 
     Parameters:
         api_call (callable): The API function to decorate. It must accept a self reference,
@@ -35,6 +35,7 @@ def api_call_with_cookie_retry(api_call):
                     raise
 
     return wrapper
+
 
 class WikipediaScraper:
     # API base URL and endpoints
