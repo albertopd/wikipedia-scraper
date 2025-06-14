@@ -154,12 +154,17 @@ class WikipediaScraper:
 
         for paragraph in paragraphs:
             # Look for a <b> tag in the paragraph
-            bold_tag = paragraph.find("b")
+            b_tag = paragraph.find("b")
 
-            # If we find the <b> tag and is not empty, then we assume that we are in the first paragraph of the main content
-            if bold_tag and bold_tag.get_text().rstrip() != "":
-                # Clean the content of the paragraph before returning it
-                return self.clean_paragraph(paragraph.get_text().rstrip())
+            # If we find the <b> tag and is not empty and it's not the only tag inside the paragraph, 
+            # then we assume that we found a reliable first paragraph
+            if b_tag:
+                b_tag_text = b_tag.get_text().rstrip()
+                p_tag_text = paragraph.get_text().rstrip()
+
+                if b_tag_text != "" and len(b_tag_text) != len(p_tag_text):
+                    # Clean the content of the paragraph before returning it
+                    return self.clean_paragraph(p_tag_text)
                 
         return ""
 
