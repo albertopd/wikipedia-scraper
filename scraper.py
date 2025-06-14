@@ -207,14 +207,18 @@ class WikipediaScraper:
         Args:
             filepath (str): Path where the JSON file will be saved.
         """
-        # Serializing object to JSON string
-        json_object = json.dumps(self.leaders_data, indent = 4)
+        try:
+            # Serializing object to JSON string
+            json_object = json.dumps(self.leaders_data, indent = 4)
 
-        # Writing serialized string to file
-        with open(filepath, "w") as outfile:
-            outfile.write(json_object)
+            # Writing serialized string to file
+            with open(filepath, "w") as outfile:
+                outfile.write(json_object)
 
-        print(f"Leaders data saved to {filepath}")
+            print(f"Leaders data saved as JSON file: {filepath}")
+
+        except Exception as e:
+            print(f"Failed to save leaders data to JSON file: Error: {filepath} => {e}")
 
     def to_csv_file(self, filepath: str) -> None:
         """
@@ -223,21 +227,25 @@ class WikipediaScraper:
         Args:
             filepath (str): Path where the CSV file will be saved.
         """
-        # Flatten the data and add the country info
-        rows = []
-        for country, leaders in self.leaders_data.items():
-            for leader in leaders:
-                row = leader.copy()
-                row['Country'] = country
-                rows.append(row)
+        try:
+            # Flatten the data and add the country info
+            rows = []
+            for country, leaders in self.leaders_data.items():
+                for leader in leaders:
+                    row = leader.copy()
+                    row['Country'] = country
+                    rows.append(row)
 
-        # Get all the fieldnames (keys)
-        fieldnames = ['Country'] + [key for key in rows[0] if key != 'Country']
+            # Get all the fieldnames (keys)
+            fieldnames = ['Country'] + [key for key in rows[0] if key != 'Country']
 
-        # Write to CSV
-        with open('leaders.csv', mode='w', newline='', encoding='utf-8') as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-            writer.writeheader()
-            writer.writerows(rows)
+            # Write to CSV
+            with open('leaders.csv', mode='w', newline='', encoding='utf-8') as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                writer.writeheader()
+                writer.writerows(rows)
 
-        print(f"Leaders data saved to {filepath}")
+            print(f"Leaders data saved as CSV file: {filepath}")
+            
+        except Exception as e:
+            print(f"Failed to save leaders data to CSV file: {filepath} => Error: {e}")
