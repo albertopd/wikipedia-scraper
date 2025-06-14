@@ -4,29 +4,15 @@ import csv
 from urllib.parse import urljoin
 
 import requests
-import requests.cookies
 from bs4 import BeautifulSoup
-from requests import Session
 
-
-class CookieExpiredError(Exception):
-    """
-    Exception raised when an API error occurs.
-    
-    Attributes:
-        message (str): Description of the error.
-        status_code (int, optional): HTTP status code returned by the API.
-    """
-    def __init__(self, status_code: int):
-        self.status_code = status_code 
-        super().__init__(f"Cookie expired (STATUS CODE: {status_code})")
 
 def api_call_with_cookie_retry(api_call):
     """
     Decorator that retries an API call when a cookie expired error occurs.
 
-    This decorator wraps an API call function and attempts to handle `CookieExpiredError`
-    by fetching a new cookie and retrying the call.
+    This decorator wraps an API call function and attempts to handle `requests.exceptions.HTTPError` 
+    (with error code 403 -> cookie expired), by fetching a new cookie and retrying the call.
 
     Parameters:
         api_call (callable): The API function to decorate. It must accept a self reference,
@@ -40,11 +26,16 @@ def api_call_with_cookie_retry(api_call):
         for _ in range(2):
             try:
                 return api_call(self, *args, **kwargs)
-            except CookieExpiredError:
-                print("Cookie expired, getting another one from the jar")
-                self.refresh_cookie()
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 403:
+                    print("Cookie expired, getting another one from the jar")
+                    self.refresh_cookie()
+                else:
+                    # For other error codes, we re-raise the exception so it bubbles up
+                    raise
 
     return wrapper
+
 
 class WikipediaScraper:
     # API base URL and endpoints
@@ -52,9 +43,6 @@ class WikipediaScraper:
     COOKIE_ENDPOINT = "/cookie"
     COUNTRIES_ENDPOINT = "/countries"
     LEADERS_ENDPOINT = "/leaders"
-
-    # API status codes
-    STATUS_CODE_EXPIRED_COOKIE = 403
 
     def __init__(self) -> None:
         self.session = requests.Session()
@@ -104,10 +92,6 @@ class WikipediaScraper:
             urljoin(self.API_BASE_URL, self.COUNTRIES_ENDPOINT),
             cookies = self.cookie
         )
-
-        if countries_response.status_code == self.STATUS_CODE_EXPIRED_COOKIE:
-            raise CookieExpiredError(countries_response.status_code)
-
         countries_response.raise_for_status()
 
         return countries_response.json()
@@ -128,10 +112,6 @@ class WikipediaScraper:
             cookies = self.cookie,
             params = {"country": country_code}
         )
-
-        if leaders_response.status_code == self.STATUS_CODE_EXPIRED_COOKIE:
-            raise CookieExpiredError(leaders_response.status_code)
-        
         leaders_response.raise_for_status()
 
         return leaders_response.json()
@@ -174,12 +154,17 @@ class WikipediaScraper:
 
         for paragraph in paragraphs:
             # Look for a <b> tag in the paragraph
-            bold_tag = paragraph.find("b")
+            b_tag = paragraph.find("b")
 
-            # If we find the <b> tag and is not empty, then we assume that we are in the first paragraph of the main content
-            if bold_tag and bold_tag.get_text().rstrip() != "":
-                # Clean the content of the paragraph before returning it
-                return self.clean_paragraph(paragraph.get_text().rstrip())
+            # If we find the <b> tag and is not empty and it's not the only tag inside the paragraph, 
+            # then we assume that we found a reliable first paragraph
+            if b_tag:
+                b_tag_text = b_tag.get_text().rstrip()
+                p_tag_text = paragraph.get_text().rstrip()
+
+                if b_tag_text != "" and len(b_tag_text) != len(p_tag_text):
+                    # Clean the content of the paragraph before returning it
+                    return self.clean_paragraph(p_tag_text)
                 
         return ""
 
@@ -222,14 +207,18 @@ class WikipediaScraper:
         Args:
             filepath (str): Path where the JSON file will be saved.
         """
-        # Serializing object to JSON string
-        json_object = json.dumps(self.leaders_data, indent = 4)
+        try:
+            # Serializing object to JSON string
+            json_object = json.dumps(self.leaders_data, indent = 4)
 
-        # Writing serialized string to file
-        with open(filepath, "w") as outfile:
-            outfile.write(json_object)
+            # Writing serialized string to file
+            with open(filepath, "w") as outfile:
+                outfile.write(json_object)
 
-        print(f"Leaders data saved to {filepath}")
+            print(f"Leaders data saved as JSON file: {filepath}")
+
+        except Exception as e:
+            print(f"Failed to save leaders data to JSON file: Error: {filepath} => {e}")
 
     def to_csv_file(self, filepath: str) -> None:
         """
@@ -238,21 +227,25 @@ class WikipediaScraper:
         Args:
             filepath (str): Path where the CSV file will be saved.
         """
-        # Flatten the data and add the country info
-        rows = []
-        for country, leaders in self.leaders_data.items():
-            for leader in leaders:
-                row = leader.copy()
-                row['Country'] = country
-                rows.append(row)
+        try:
+            # Flatten the data and add the country info
+            rows = []
+            for country, leaders in self.leaders_data.items():
+                for leader in leaders:
+                    row = leader.copy()
+                    row['Country'] = country
+                    rows.append(row)
 
-        # Get all the fieldnames (keys)
-        fieldnames = ['Country'] + [key for key in rows[0] if key != 'Country']
+            # Get all the fieldnames (keys)
+            fieldnames = ['Country'] + [key for key in rows[0] if key != 'Country']
 
-        # Write to CSV
-        with open('leaders.csv', mode='w', newline='', encoding='utf-8') as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-            writer.writeheader()
-            writer.writerows(rows)
+            # Write to CSV
+            with open('leaders.csv', mode='w', newline='', encoding='utf-8') as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                writer.writeheader()
+                writer.writerows(rows)
 
-        print(f"Leaders data saved to {filepath}")
+            print(f"Leaders data saved as CSV file: {filepath}")
+            
+        except Exception as e:
+            print(f"Failed to save leaders data to CSV file: {filepath} => Error: {e}")
